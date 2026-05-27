@@ -1,18 +1,31 @@
 {
-  "title": "ReleaseBar",
-  "subtitle": "Open source release freshness across steipete and OpenClaw.",
-  "canonicalDomain": "release.bar",
+  "title": "Lionroot ReleaseBar",
+  "subtitle": "Release freshness across Lionroot, OpenClaw, family-code, and studio repos.",
+  "canonicalDomain": "releasebar.lionroot.ai",
   "owners": [
     {
       "type": "user",
-      "login": "steipete"
+      "login": "lionrooter"
     },
     {
       "type": "org",
       "login": "openclaw"
+    },
+    {
+      "type": "org",
+      "login": "lionroot-game-dev"
+    },
+    {
+      "type": "org",
+      "login": "fisher-family-code"
+    },
+    {
+      "type": "org",
+      "login": "lionroot-studio"
     }
   ],
   "includeForks": false,
   "includeArchived": false,
-  "excludeRepos": ["steipete/steipete"]
+  "includeUnreleased": true,
+  "excludeRepos": []
 }

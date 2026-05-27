@@ -1,7 +1,7 @@
-name = "releasedeck-api"
+name = "lionroot-releasebar"
 main = "node_modules/.cache/releasebar-build/worker/index.js"
 compatibility_date = "2026-05-15"
-account_id = "de09342a728de2c25c85cc6b34d68739"
+account_id = "91b59577e757131d68d55a471fe32aca"
 workers_dev = true
 
 [vars]
