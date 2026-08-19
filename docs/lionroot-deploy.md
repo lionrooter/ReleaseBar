@@ -8,9 +8,13 @@ This fork tracks upstream `steipete/ReleaseBar` while configuring the dashboard 
 - `wrangler.toml` uses Worker service `lionroot-releasebar` and the OpenClaw Cloudflare account ID.
 - Private repositories are still intentionally unsupported by upstream ReleaseBar. Command Post's ReleaseBar surface keeps private-repo/Ralph workflow signals as the Lionroot extension layer.
 
+## GitHub Actions
+
+Inherited `Deploy` and `Monitor` workflows are gated to `steipete/ReleaseBar` only. Push to `main` on this fork must not `wrangler deploy` or smoke `https://release.bar`. Do not add `CLOUDFLARE_API_TOKEN` to this repository to "enable" that workflow.
+
 ## Deploy
 
-Authenticate Wrangler first:
+Manual Wrangler deploy is local-only and optional. Authenticate Wrangler first:
 
 ```sh
 npx wrangler login

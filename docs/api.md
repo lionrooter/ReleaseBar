@@ -29,6 +29,9 @@ type CacheState = {
   state: "fresh" | "stale" | "partial" | "warming" | "error";
   stale: boolean;
   generatedAt: string;
+  countsUpdatedAt?: string | null;
+  releasesUpdatedAt?: string | null;
+  ciUpdatedAt?: string | null;
   message?: string;
   quota?: {
     source: "app" | "shared" | "anonymous";
@@ -46,8 +49,60 @@ Agents should:
 - prefer `fresh` and `stale` payloads over calling GitHub directly
 - keep their own short client cache keyed by endpoint URL
 - surface `cache.stale`, `cache.generatedAt`, and `cache.message` in audit logs
+- use `countsUpdatedAt`, `releasesUpdatedAt`, and `ciUpdatedAt` when field-specific freshness matters
 - avoid retry loops on `429`; respect `Retry-After` when present
 - treat `error` payloads as "no ReleaseBar signal", not as negative user evidence
+
+## Owner Activity
+
+`GET /api/:owner/activity?range=day|week|month`
+
+Returns recent public GitHub work grouped and ranked by repository. When GitHub fork metadata is available, activity in contributor forks whose upstream repository belongs to the profile is omitted; work in unrelated external repositories remains visible. Repository activity counts include commit items inside push events, so a multi-commit push contributes its full count instead of one event envelope. The matching page route is `/:owner/activity`; reserved owners `api` and `og` use `/-/owners/:owner/activity`, while repositories literally named `activity` use `/-/:owner/activity`.
+
+When AI summaries are configured, one bounded background request sends compact repository-grouped work and produces both the overall summary and one- or two-sentence summaries for up to 30 ranked repositories. Sparse repositories remain brief rather than being padded.
+
+```ts
+type OwnerActivityPayload = {
+  owner: { type: "user" | "org"; login: string; avatarUrl?: string; url?: string };
+  range: "day" | "week" | "month";
+  generatedAt: string;
+  cache: CacheState;
+  totals: {
+    events: number;
+    commits: number;
+    pullRequests: number;
+    issues: number;
+    comments: number;
+    releases: number;
+    repositories: number;
+  };
+  repositories: Array<{
+    fullName: string;
+    url: string;
+    events: number;
+    commits: number;
+    pullRequests: number;
+    issues: number;
+    comments: number;
+    releases: number;
+    lastActiveAt: string;
+  }>;
+  events: Array<{
+    id: string;
+    kind: "commit" | "pull_request" | "issue" | "comment" | "release" | "repository" | "other";
+    title: string;
+    repo: string;
+    url: string | null;
+    createdAt: string;
+    count: number;
+  }>;
+  summary?: {
+    state: "ready" | "warming" | "unavailable";
+    text: string | null;
+    repositories?: Array<{ fullName: string; text: string }>;
+  };
+};
+```
 
 ## User Trust Or Org Signal Profile
 
@@ -136,7 +191,7 @@ type TrustProfilePayload = {
 
 ### Score Semantics
 
-`score` is a 0-100 public-signal score. `tier` is derived from that score, except obvious automation accounts return `bot`.
+`score` is a 0-100 public-signal score. `tier` is derived from that score, except obvious automation accounts return `bot`. Bot classification prefers GitHub account metadata (`Bot` or app identities) when available, then falls back to explicit `[bot]` logins, exact `bot`, known automation prefixes such as `dependabot`, `renovate`, and `github-actions`, or separator-delimited `bot` markers such as `ci.bot` and `release-bot`. Ambiguous no-separator names such as `crawlerbot`, `robot`, or `gpt4bot` require account metadata instead of a broad `*bot` suffix guess.
 
 For `profileKind: "user_trust"`, the score describes a person/account as a public GitHub actor. For `profileKind: "org_signal"`, the score describes an organization's public footprint and credibility. These are intentionally not the same semantic label.
 
