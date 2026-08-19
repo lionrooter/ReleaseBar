@@ -1,1265 +1,97 @@
-import type {
-  ApiQuota,
-  CiState,
-  DashboardPayload,
-  Freshness,
-  Owner,
-  Project,
-  ReleaseBarConfig,
-} from "../../src/types.js";
-
-export type DashboardBuildOptions = {
-  title: string;
-  subtitle: string;
-  canonicalDomain: string;
-  owners: Owner[];
-  includeForks: boolean;
-  includeArchived: boolean;
-  includeUnreleased?: boolean;
-  includeReleaseData?: boolean;
-  excludeRepos?: string[];
-  includeRepos?: string[];
-  initialProjects?: Project[];
-  skipRepos?: string[];
-  repoLimit?: number;
-  repoScanLimit?: number;
-  repoScanTarget?: number;
-  hydrateSort?: "issues" | "prs" | null;
-  hydrateDirection?: "asc" | "desc";
-  token?: string;
-  quotaSource?: ApiQuota["source"];
-  quotaAccount?: string | null;
-  fetch?: typeof fetch;
-  projectCache?: ProjectCache;
-  onProgress?: (
-    payload: DashboardPayload,
-    progress: {
-      scannedRepo: string;
-      scanned: number;
-      done: boolean;
-      phase: "metadata" | "hydrate" | "complete";
-    },
-  ) => Promise<void> | void;
-  log?: (message: string) => void;
-};
-
-type ProjectCache = {
-  get(key: string): Promise<string | null>;
-  put(key: string, value: string, options?: { expirationTtl?: number }): Promise<void>;
-};
-
-type GitHubOwner = {
-  login: string;
-  type?: "User" | "Organization";
-  avatar_url?: string;
-  html_url?: string;
-};
-
-type GitHubRepo = {
-  owner: GitHubOwner;
-  name: string;
-  full_name: string;
-  description: string | null;
-  html_url: string;
-  default_branch: string;
-  language: string | null;
-  topics?: string[];
-  stargazers_count: number;
-  forks_count: number;
-  open_issues_count: number;
-  archived: boolean;
-  pushed_at: string | null;
-  updated_at: string | null;
-  fork: boolean;
-  private: boolean;
-  latest_release?: GitHubRelease | null;
-  latest_commit?: GitHubCommit | null;
-  status_check_rollup?: GitHubStatusCheckRollup | null;
-  open_issues_total?: number;
-  open_pull_requests_total?: number;
-};
-
-type GitHubRelease = {
-  tag_name: string;
-  name: string | null;
-  html_url: string;
-  draft?: boolean;
-  published_at: string | null;
-};
-
-type GitHubCommit = {
-  sha: string;
-  commit?: {
-    committer?: {
-      date?: string;
-    };
-  };
-};
-
-type GitHubCompare = {
-  total_commits?: number;
-  html_url?: string;
-};
-
-type GitHubCheckRun = {
-  name: string | null;
-  html_url: string;
-  status: string | null;
-  conclusion: string | null;
-  completed_at: string | null;
-  started_at: string | null;
-};
-
-type GitHubCheckRuns = {
-  check_runs?: GitHubCheckRun[];
-};
-
-type GitHubStatusCheckRollup = {
-  state: string | null;
-  contexts?: {
-    totalCount: number;
-    nodes: Array<{
-      __typename?: string;
-      name?: string | null;
-      context?: string | null;
-      status?: string | null;
-      conclusion?: string | null;
-      state?: string | null;
-      detailsUrl?: string | null;
-      targetUrl?: string | null;
-      completedAt?: string | null;
-      startedAt?: string | null;
-      createdAt?: string | null;
-    } | null>;
-  } | null;
-};
-
-type CiDetails = {
-  state: CiState;
-  status: string | null;
-  conclusion: string | null;
-  workflow: string | null;
-  url: string | null;
-  runDate: string | null;
-};
-
-type GitHubClient = {
-  fetch: typeof fetch;
-  headers: Record<string, string>;
-  graphqlCursors: Map<string, Array<string | null | undefined>>;
-  quota: ApiQuota;
-};
-
-type GraphQLRepoNode = {
-  owner: {
-    login: string;
-    __typename?: string;
-  };
-  name: string;
-  nameWithOwner: string;
-  description: string | null;
-  url: string;
-  defaultBranchRef: null | {
-    name: string;
-    target?: {
-      oid: string;
-      committedDate: string | null;
-      statusCheckRollup?: GitHubStatusCheckRollup | null;
-    } | null;
-  };
-  primaryLanguage: null | {
-    name: string;
-  };
-  repositoryTopics?: {
-    nodes: Array<{
-      topic?: {
-        name?: string | null;
-      } | null;
-    } | null>;
-  };
-  stargazerCount: number;
-  forkCount: number;
-  issues: {
-    totalCount: number;
-  };
-  pullRequests: {
-    totalCount: number;
-  };
-  isArchived: boolean;
-  isFork: boolean;
-  isPrivate: boolean;
-  pushedAt: string | null;
-  updatedAt: string | null;
-  releases?: {
-    nodes: Array<{
-      tagName: string;
-      name: string | null;
-      url: string;
-      isDraft?: boolean;
-      publishedAt: string | null;
-    } | null>;
-  } | null;
-};
-
-type GraphQLRepoPage = {
-  data?: {
-    repositoryOwner?: null | {
-      __typename?: string;
-      repositories: {
-        pageInfo: {
-          hasNextPage: boolean;
-          endCursor: string | null;
-        };
-        nodes: Array<GraphQLRepoNode | null>;
-      };
-    };
-  };
-  errors?: Array<{ message?: string; type?: string }>;
-};
-
-type GraphQLRepoDetailNode = {
-  nameWithOwner: string;
-  defaultBranchRef: null | {
-    name: string;
-    target?: {
-      oid: string;
-      committedDate: string | null;
-      statusCheckRollup?: GitHubStatusCheckRollup | null;
-    } | null;
-  };
-};
-
-type GraphQLRepoDetailsPage = {
-  data?: Record<string, GraphQLRepoDetailNode | null>;
-  errors?: Array<{ message?: string; type?: string }>;
-};
-
-type ProjectCacheEntry = {
-  signature: string;
-  project: Omit<Project, "freshness">;
-};
-
-const repoFragmentTtlSeconds = 30 * 60;
-
-export class GitHubRateLimitError extends Error {
-  readonly retryAfterSeconds: number | null;
-  constructor(message: string, retryAfterSeconds: number | null) {
-    super(message);
-    this.name = "GitHubRateLimitError";
-    this.retryAfterSeconds = retryAfterSeconds;
-  }
-}
-
-function rateLimitFromResponse(response: Response, pathname: string): GitHubRateLimitError | null {
-  const remaining = response.headers.get("x-ratelimit-remaining");
-  const retryAfter = response.headers.get("retry-after");
-  const isRateLimited =
-    response.status === 429 ||
-    (response.status === 403 && remaining === "0") ||
-    retryAfter !== null;
-  if (!isRateLimited) return null;
-  const reset = response.headers.get("x-ratelimit-reset");
-  const retryAfterSeconds = retryAfter
-    ? Number(retryAfter)
-    : reset
-      ? Math.max(0, Number(reset) - Math.floor(Date.now() / 1000))
-      : null;
-  return new GitHubRateLimitError(
-    `GitHub rate limit hit for ${pathname}`,
-    Number.isFinite(retryAfterSeconds) ? retryAfterSeconds : null,
-  );
-}
-
-function numberHeader(headers: Headers, name: string): number | null {
-  const value = headers.get(name);
-  if (value === null) return null;
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : null;
-}
-
-function resetAtHeader(headers: Headers): string | null {
-  const reset = numberHeader(headers, "x-ratelimit-reset");
-  return reset === null ? null : new Date(reset * 1000).toISOString();
-}
-
-function recordRateLimit(client: GitHubClient, response: Response): void {
-  const limit = numberHeader(response.headers, "x-ratelimit-limit");
-  const remaining = numberHeader(response.headers, "x-ratelimit-remaining");
-  const resetAt = resetAtHeader(response.headers);
-  const resource = response.headers.get("x-ratelimit-resource");
-  if (limit === null && remaining === null && resetAt === null && resource === null) {
-    return;
-  }
-
-  const replaceBucket =
-    remaining !== null && (client.quota.remaining === null || remaining <= client.quota.remaining);
-  client.quota = {
-    ...client.quota,
-    limit: replaceBucket ? (limit ?? client.quota.limit) : (client.quota.limit ?? limit),
-    remaining: replaceBucket ? remaining : client.quota.remaining,
-    resetAt: replaceBucket ? (resetAt ?? client.quota.resetAt) : (client.quota.resetAt ?? resetAt),
-    resource: replaceBucket
-      ? (resource ?? client.quota.resource)
-      : (client.quota.resource ?? resource),
-  };
-}
-
-export function normalizeBuildOptions(
-  config: ReleaseBarConfig,
-  overrides: Partial<DashboardBuildOptions> = {},
-): DashboardBuildOptions {
-  return {
-    ...config,
-    includeUnreleased: config.includeUnreleased ?? false,
-    ...overrides,
-    owners: overrides.owners ?? config.owners,
-    excludeRepos: overrides.excludeRepos ?? config.excludeRepos,
-  };
-}
-
-export function slugOwner(login: string): string {
-  return login.trim().replace(/^@/, "").toLowerCase();
-}
-
-export function validOwnerSlug(login: string): boolean {
-  return /^[a-z\d](?:[a-z\d-]{0,37}[a-z\d])?$/i.test(login);
-}
-
-export function validRepoSlug(repo: string): boolean {
-  return /^[a-z\d](?:[a-z\d-]{0,37}[a-z\d])?\/[a-z\d._-]{1,100}$/i.test(repo);
-}
-
-function cacheHash(value: string): string {
-  let hash = 0xcbf29ce484222325n;
-  for (let index = 0; index < value.length; index += 1) {
-    hash ^= BigInt(value.charCodeAt(index));
-    hash = BigInt.asUintN(64, hash * 0x100000001b3n);
-  }
-  return hash.toString(36);
-}
-
-export function dashboardCacheKey(options: {
-  owner: string;
-  owners?: string[];
-  repos?: string[];
-  salt?: string;
-  includeForks?: boolean;
-  includeArchived?: boolean;
-  includeUnreleased?: boolean;
-  includeReleaseData?: boolean;
-  schemaVersion?: number;
-}): string {
-  const schemaVersion = options.schemaVersion ?? 1;
-  const flags = [
-    options.includeForks ? "forks" : "noforks",
-    options.includeArchived ? "archived" : "noarchived",
-    options.includeUnreleased ? "unreleased" : "released",
-    options.includeReleaseData === false ? "metadata" : "release",
-  ].join("-");
-  const owners = (options.owners ?? []).map(slugOwner).sort().join(",");
-  const repos = (options.repos ?? [])
-    .map((repo) => repo.toLowerCase())
-    .sort()
-    .join(",");
-  const sourceText = options.salt
-    ? `${owners}\n${repos}\n${options.salt}`
-    : owners || repos
-      ? `${owners}\n${repos}`
-      : "";
-  const sources = sourceText ? `:sources-${cacheHash(sourceText)}` : "";
-  return `dashboard:v${schemaVersion}:${slugOwner(options.owner)}:${flags}${sources}`;
-}
-
-export function filterRepo(
-  repo: Pick<GitHubRepo, "archived" | "fork" | "full_name" | "private">,
-  options: Pick<DashboardBuildOptions, "excludeRepos" | "includeArchived" | "includeForks">,
-): boolean {
-  if (!options.includeForks && repo.fork) {
-    return false;
-  }
-  if (!options.includeArchived && repo.archived) {
-    return false;
-  }
-  if (
-    (options.excludeRepos || [])
-      .map((value) => value.toLowerCase())
-      .includes(repo.full_name.toLowerCase())
-  ) {
-    return false;
-  }
-  return !repo.private;
-}
-
-export function freshness(project: Pick<Project, "commitsSinceRelease">): Freshness {
-  if (project.commitsSinceRelease === 0) {
-    return "fresh";
-  }
-  if (project.commitsSinceRelease !== null && project.commitsSinceRelease <= 5) {
-    return "warm";
-  }
-  if (project.commitsSinceRelease !== null && project.commitsSinceRelease <= 25) {
-    return "busy";
-  }
-  return "hot";
-}
-
-function repoSearchProject(repo: GitHubRepo): Project {
-  const openPullRequests = repo.open_pull_requests_total ?? 0;
-  return {
-    owner: repo.owner.login,
-    name: repo.name,
-    fullName: repo.full_name,
-    description: repo.description,
-    url: repo.html_url,
-    defaultBranch: repo.default_branch,
-    language: repo.language,
-    topics: repo.topics ?? [],
-    stars: repo.stargazers_count,
-    forks: repo.forks_count,
-    openIssues: repo.open_issues_total ?? Math.max(repo.open_issues_count - openPullRequests, 0),
-    openPullRequests,
-    issuesUrl: `${repo.html_url}/issues`,
-    pullRequestsUrl: `${repo.html_url}/pulls`,
-    archived: repo.archived,
-    pushedAt: repo.pushed_at,
-    updatedAt: repo.updated_at,
-    latestCommitSha: null,
-    latestCommitDate: null,
-    version: "repo search",
-    releaseName: null,
-    releaseUrl: `${repo.html_url}/releases`,
-    releaseDate: null,
-    commitsSinceRelease: null,
-    compareUrl: null,
-    ciState: "unknown",
-    ciStatus: null,
-    ciConclusion: null,
-    ciWorkflow: null,
-    ciUrl: null,
-    ciRunDate: null,
-    freshness: "hot",
-  };
-}
-
-function mergeRepoMetadata(project: Project, repo: GitHubRepo): Project;
-function mergeRepoMetadata(
-  project: Omit<Project, "freshness">,
-  repo: GitHubRepo,
-): Omit<Project, "freshness">;
-function mergeRepoMetadata(
-  project: Project | Omit<Project, "freshness">,
-  repo: GitHubRepo,
-): Project | Omit<Project, "freshness"> {
-  const metadata = repoSearchProject(repo);
-  const hasSplitCounts =
-    repo.open_issues_total !== undefined || repo.open_pull_requests_total !== undefined;
-  return {
-    ...project,
-    owner: metadata.owner,
-    name: metadata.name,
-    fullName: metadata.fullName,
-    description: metadata.description,
-    url: metadata.url,
-    defaultBranch: metadata.defaultBranch,
-    language: metadata.language,
-    topics: metadata.topics,
-    stars: metadata.stars,
-    forks: metadata.forks,
-    openIssues: hasSplitCounts ? metadata.openIssues : project.openIssues,
-    openPullRequests: hasSplitCounts ? metadata.openPullRequests : project.openPullRequests,
-    issuesUrl: metadata.issuesUrl,
-    pullRequestsUrl: metadata.pullRequestsUrl,
-    archived: metadata.archived,
-    pushedAt: metadata.pushedAt,
-    updatedAt: metadata.updatedAt,
-  };
-}
-
-function isRepoSearchProject(project: Project): boolean {
-  return (
-    project.version === "repo search" &&
-    project.releaseDate === null &&
-    project.commitsSinceRelease === null &&
-    project.compareUrl === null
-  );
-}
-
-function githubClient(
-  token = "",
-  fetcher: typeof fetch = fetch,
-  quotaSource: ApiQuota["source"] = token ? "shared" : "anonymous",
-  quotaAccount: string | null = null,
-): GitHubClient {
-  const headers: Record<string, string> = {
-    Accept: "application/vnd.github+json",
-    "User-Agent": "ReleaseBar",
-    "X-GitHub-Api-Version": "2022-11-28",
-  };
-
-  if (token) {
-    headers.Authorization = `Bearer ${token}`;
-  }
-
-  return {
-    fetch: fetcher,
-    headers,
-    graphqlCursors: new Map(),
-    quota: {
-      source: quotaSource,
-      account: quotaAccount,
-      remaining: null,
-      limit: null,
-      resetAt: null,
-      resource: null,
-    },
-  };
-}
-
-async function github<T>(
-  client: GitHubClient,
-  pathname: string,
-  ignoreStatuses: number[] = [404],
-): Promise<T | null> {
-  const response = await client.fetch(`https://api.github.com${pathname}`, {
-    headers: client.headers,
-  });
-  recordRateLimit(client, response);
-  const rateLimit = rateLimitFromResponse(response, pathname);
-  if (rateLimit) throw rateLimit;
-  if (ignoreStatuses.includes(response.status)) {
-    return null;
-  }
-  if (!response.ok) {
-    const body = await response.text();
-    throw new Error(`GitHub API ${response.status} for ${pathname}: ${body.slice(0, 500)}`);
-  }
-  return (await response.json()) as T;
-}
-
-async function githubPage<T>(client: GitHubClient, pathname: string, page: number): Promise<T[]> {
-  const joiner = pathname.includes("?") ? "&" : "?";
-  return (await github<T[]>(client, `${pathname}${joiner}per_page=100&page=${page}`)) ?? [];
-}
-
-async function githubPages<T>(client: GitHubClient, pathname: string): Promise<T[]> {
-  let page = 1;
-  const items: T[] = [];
-  while (true) {
-    const result = await githubPage<T>(client, pathname, page);
-    if (result.length === 0) {
-      break;
-    }
-    items.push(...result);
-    if (result.length < 100) {
-      break;
-    }
-    page += 1;
-  }
-  return items;
-}
-
-async function githubGraphql<T>(
-  client: GitHubClient,
-  query: string,
-  variables: Record<string, unknown>,
-): Promise<T | null> {
-  if (!client.headers.Authorization) {
-    return null;
-  }
-  const response = await client.fetch("https://api.github.com/graphql", {
-    method: "POST",
-    headers: {
-      ...client.headers,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ query, variables }),
-  });
-  recordRateLimit(client, response);
-  if (response.headers.get("x-releasebar-github-backoff") === "graphql") {
-    throw new GitHubRateLimitError("GitHub GraphQL temporarily paused after upstream errors", null);
-  }
-  const rateLimit = rateLimitFromResponse(response, "/graphql");
-  if (rateLimit) throw rateLimit;
-  if (!response.ok) {
-    return null;
-  }
-  const body = (await response.json()) as GraphQLRepoPage;
-  if (body.errors?.length) {
-    const message = body.errors.map((error) => error.message ?? error.type).join("; ");
-    if (/rate limit|secondary rate|api rate limit/i.test(message)) {
-      throw new GitHubRateLimitError(`GitHub rate limit hit for /graphql`, null);
-    }
-    return null;
-  }
-  return body as T;
-}
-
-const ownerReposQuery = /* GraphQL */ `
-  query ReleaseBarOwnerRepos(
-    $login: String!
-    $first: Int!
-    $after: String
-    $includeReleases: Boolean!
-  ) {
-    repositoryOwner(login: $login) {
-      __typename
-      repositories(
-        first: $first
-        after: $after
-        orderBy: { field: PUSHED_AT, direction: DESC }
-        ownerAffiliations: OWNER
-        privacy: PUBLIC
-      ) {
-        pageInfo {
-          hasNextPage
-          endCursor
-        }
-        nodes {
-          owner {
-            login
-            __typename
-          }
-          name
-          nameWithOwner
-          description
-          url
-          primaryLanguage {
-            name
-          }
-          repositoryTopics(first: 6) {
-            nodes {
-              topic {
-                name
-              }
-            }
-          }
-          stargazerCount
-          forkCount
-          issues(states: OPEN) {
-            totalCount
-          }
-          pullRequests(states: OPEN) {
-            totalCount
-          }
-          isArchived
-          isFork
-          isPrivate
-          pushedAt
-          updatedAt
-          releases(first: 10, orderBy: { field: CREATED_AT, direction: DESC })
-            @include(if: $includeReleases) {
-            nodes {
-              tagName
-              name
-              url
-              isDraft
-              publishedAt
-            }
-          }
-          defaultBranchRef {
-            name
-            target {
-              ... on Commit {
-                oid
-                committedDate
-              }
-            }
-          }
-        }
-      }
-    }
-  }
-`;
-
-function graphQlRepo(node: GraphQLRepoNode): GitHubRepo {
-  const latestRelease = node.releases?.nodes.find(
-    (release) => release?.tagName && !release.isDraft && release.publishedAt,
-  );
-  return {
-    owner: {
-      login: node.owner.login,
-      type: node.owner.__typename === "Organization" ? "Organization" : "User",
-    },
-    name: node.name,
-    full_name: node.nameWithOwner,
-    description: node.description,
-    html_url: node.url,
-    default_branch: node.defaultBranchRef?.name ?? "main",
-    language: node.primaryLanguage?.name ?? null,
-    topics:
-      node.repositoryTopics?.nodes
-        .map((topicNode) => topicNode?.topic?.name)
-        .filter((name): name is string => Boolean(name)) ?? [],
-    stargazers_count: node.stargazerCount,
-    forks_count: node.forkCount,
-    open_issues_count: node.issues.totalCount + node.pullRequests.totalCount,
-    archived: node.isArchived,
-    pushed_at: node.pushedAt,
-    updated_at: node.updatedAt,
-    fork: node.isFork,
-    private: node.isPrivate,
-    latest_release: latestRelease
-      ? {
-          tag_name: latestRelease.tagName,
-          name: latestRelease.name,
-          html_url: latestRelease.url,
-          draft: latestRelease.isDraft,
-          published_at: latestRelease.publishedAt,
-        }
-      : null,
-    latest_commit:
-      node.defaultBranchRef?.target && "oid" in node.defaultBranchRef.target
-        ? {
-            sha: node.defaultBranchRef.target.oid,
-            commit: {
-              committer: {
-                date: node.defaultBranchRef.target.committedDate ?? undefined,
-              },
-            },
-          }
-        : null,
-    status_check_rollup:
-      node.defaultBranchRef?.target && "statusCheckRollup" in node.defaultBranchRef.target
-        ? (node.defaultBranchRef.target.statusCheckRollup ?? null)
-        : null,
-    open_issues_total: node.issues.totalCount,
-    open_pull_requests_total: node.pullRequests.totalCount,
-  };
-}
-
-async function ownerReposGraphqlPage(
-  client: GitHubClient,
-  owner: Owner,
-  page: number,
-  includeReleaseData: boolean,
-): Promise<GitHubRepo[] | null> {
-  const cursorKey = `${owner.type}:${slugOwner(owner.login)}`;
-  const cursors = client.graphqlCursors.get(cursorKey) ?? [null];
-  const after = cursors[page - 1];
-  if (after === undefined) {
-    return null;
-  }
-  const body = await githubGraphql<GraphQLRepoPage>(client, ownerReposQuery, {
-    login: owner.login,
-    first: 100,
-    after,
-    includeReleases: includeReleaseData,
-  });
-  const repositoryOwner = body?.data?.repositoryOwner;
-  if (!repositoryOwner) {
-    return null;
-  }
-  const repos = repositoryOwner.repositories.nodes
-    .filter((node): node is GraphQLRepoNode => Boolean(node))
-    .map(graphQlRepo);
-  cursors[page] = repositoryOwner.repositories.pageInfo.hasNextPage
-    ? repositoryOwner.repositories.pageInfo.endCursor
-    : undefined;
-  client.graphqlCursors.set(cursorKey, cursors);
-  return repos;
-}
-
-function repoDetailsQuery(repos: GitHubRepo[]): string {
-  const fields = repos
-    .map((repo, index) => {
-      const [owner, name] = repo.full_name.split("/");
-      return `
-        r${index}: repository(owner: ${JSON.stringify(owner ?? "")}, name: ${JSON.stringify(
-          name ?? "",
-        )}) {
-          nameWithOwner
-          defaultBranchRef {
-            name
-            target {
-              ... on Commit {
-                oid
-                committedDate
-                statusCheckRollup {
-                  state
-                  contexts(first: 100) {
-                    totalCount
-                    nodes {
-                      __typename
-                      ... on CheckRun {
-                        name
-                        status
-                        conclusion
-                        detailsUrl
-                        completedAt
-                        startedAt
-                      }
-                      ... on StatusContext {
-                        context
-                        state
-                        targetUrl
-                        createdAt
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
-      `;
-    })
-    .join("\n");
-  return `query ReleaseBarRepoDetails { ${fields} }`;
-}
-
-async function hydrateRepoDetailsGraphql(
-  client: GitHubClient,
-  repos: GitHubRepo[],
-): Promise<Map<string, Partial<GitHubRepo>>> {
-  const details = new Map<string, Partial<GitHubRepo>>();
-  const candidates = repos.filter((repo) => repo.full_name.includes("/"));
-  if (candidates.length === 0 || !client.headers.Authorization) return details;
-  const body = await githubGraphql<GraphQLRepoDetailsPage>(
-    client,
-    repoDetailsQuery(candidates),
-    {},
-  );
-  for (const node of Object.values(body?.data ?? {})) {
-    if (!node?.nameWithOwner) continue;
-    const target = node.defaultBranchRef?.target;
-    const detail: Partial<GitHubRepo> = {};
-    if (node.defaultBranchRef?.name) {
-      detail.default_branch = node.defaultBranchRef.name;
-    }
-    if (target && "oid" in target) {
-      detail.latest_commit = {
-        sha: target.oid,
-        commit: {
-          committer: {
-            date: target.committedDate ?? undefined,
-          },
-        },
-      };
-      if ("statusCheckRollup" in target) {
-        detail.status_check_rollup = target.statusCheckRollup ?? null;
-      }
-    }
-    details.set(node.nameWithOwner.toLowerCase(), detail);
-  }
-  return details;
-}
-
-async function hydrateRepoDetailsOrEmpty(
-  client: GitHubClient,
-  repos: GitHubRepo[],
-): Promise<Map<string, Partial<GitHubRepo>>> {
-  return hydrateRepoDetailsGraphql(client, repos).catch((error: unknown) => {
-    if (error instanceof GitHubRateLimitError) throw error;
-    return new Map<string, Partial<GitHubRepo>>();
-  });
-}
-
-function repoWithGraphqlDetails(
-  repo: GitHubRepo,
-  details: Map<string, Partial<GitHubRepo>>,
-): GitHubRepo {
-  const detail = details.get(repo.full_name.toLowerCase());
-  return detail ? { ...repo, ...detail } : repo;
-}
-
-async function githubCount(client: GitHubClient, pathname: string): Promise<number> {
-  const joiner = pathname.includes("?") ? "&" : "?";
-  const response = await client.fetch(`https://api.github.com${pathname}${joiner}per_page=1`, {
-    headers: client.headers,
-  });
-  recordRateLimit(client, response);
-  if (response.status === 404) {
-    return 0;
-  }
-  if (!response.ok) {
-    const rateLimit = rateLimitFromResponse(response, pathname);
-    if (rateLimit) throw rateLimit;
-    const body = await response.text();
-    throw new Error(`GitHub API ${response.status} for ${pathname}: ${body.slice(0, 500)}`);
-  }
-
-  const link = response.headers.get("link");
-  const lastPage = link?.match(/[?&]page=(\d+)>;\s*rel="last"/)?.[1];
-  if (lastPage) {
-    return Number(lastPage);
-  }
-
-  const items = (await response.json()) as unknown[];
-  return items.length;
-}
-
-async function ownerRepos(
-  client: GitHubClient,
-  owner: Owner,
-  includeReleaseData: boolean,
-  page?: number,
-): Promise<GitHubRepo[]> {
-  if (page) {
-    const graphqlRepos = await ownerReposGraphqlPage(client, owner, page, includeReleaseData);
-    if (graphqlRepos) {
-      return graphqlRepos;
-    }
-  }
-  const base = owner.type === "org" ? `/orgs/${owner.login}/repos` : `/users/${owner.login}/repos`;
-  const path = `${base}?type=public&sort=pushed&direction=desc`;
-  return page ? githubPage<GitHubRepo>(client, path, page) : githubPages<GitHubRepo>(client, path);
-}
-
-async function repoByFullName(client: GitHubClient, fullName: string): Promise<GitHubRepo | null> {
-  return github<GitHubRepo>(client, `/repos/${fullName}`, [404]);
-}
-
-async function latestRelease(
-  client: GitHubClient,
-  repo: GitHubRepo,
-): Promise<GitHubRelease | null> {
-  if (repo.latest_release !== undefined) {
-    const release = repo.latest_release;
-    return release?.tag_name && !release.draft && release.published_at ? release : null;
-  }
-  const releases = await github<GitHubRelease[]>(
-    client,
-    `/repos/${repo.full_name}/releases?per_page=10`,
-  );
-  return (
-    releases?.find((release) => release.tag_name && !release.draft && release.published_at) ?? null
-  );
-}
-
-async function checkRuns(
-  client: GitHubClient,
-  repo: GitHubRepo,
-  ref: string,
-): Promise<GitHubCheckRun[]> {
-  const runs = await github<GitHubCheckRuns>(
-    client,
-    `/repos/${repo.full_name}/commits/${encodeURIComponent(ref)}/check-runs?per_page=100`,
-    [404, 403, 409],
-  );
-  return runs?.check_runs ?? [];
-}
-
-function ciDetails(runs: GitHubCheckRun[]): CiDetails {
-  if (runs.length === 0) {
-    return {
-      state: "unknown",
-      status: null,
-      conclusion: null,
-      workflow: null,
-      url: null,
-      runDate: null,
-    };
-  }
-
-  const failure = runs.find((run) =>
-    ["failure", "timed_out", "action_required"].includes(run.conclusion ?? ""),
-  );
-  const active = runs.find((run) => run.status && run.status !== "completed");
-  const cancelled = runs.find((run) => run.conclusion === "cancelled");
-  const successCount = runs.filter((run) => run.conclusion === "success").length;
-  const neutralCount = runs.filter((run) => run.conclusion === "neutral").length;
-  const skippedCount = runs.filter((run) => run.conclusion === "skipped").length;
-  const selected = failure ?? active ?? cancelled ?? runs[0];
-
-  let state: CiState = "unknown";
-  if (failure) {
-    state = "failure";
-  } else if (active) {
-    state = active.status === "in_progress" ? "running" : "pending";
-  } else if (cancelled) {
-    state = "cancelled";
-  } else if (successCount > 0) {
-    state = "success";
-  } else if (neutralCount > 0) {
-    state = "neutral";
-  } else if (skippedCount > 0) {
-    state = "skipped";
-  }
-
-  return {
-    state,
-    status: selected.status,
-    conclusion: selected.conclusion,
-    workflow: state === "success" ? `${successCount}/${runs.length} checks` : selected.name,
-    url: selected.html_url,
-    runDate: selected.completed_at ?? selected.started_at,
-  };
-}
-
-function normalizeGraphqlState(value: string | null | undefined): string {
-  return (value ?? "").toLowerCase();
-}
-
-function ciDetailsFromRollup(rollup: GitHubStatusCheckRollup | null | undefined): CiDetails | null {
-  if (!rollup) return null;
-  const contexts =
-    rollup.contexts?.nodes.filter((node): node is NonNullable<typeof node> => Boolean(node)) ?? [];
-  const total = rollup.contexts?.totalCount ?? contexts.length;
-  if (total === 0 && !rollup.state) return null;
-
-  const failure = contexts.find((context) =>
-    ["failure", "timed_out", "action_required", "error"].includes(
-      normalizeGraphqlState(context.conclusion ?? context.state),
-    ),
-  );
-  const active = contexts.find((context) =>
-    ["queued", "in_progress", "requested", "waiting", "pending", "expected"].includes(
-      normalizeGraphqlState(context.status ?? context.state),
-    ),
-  );
-  const cancelled = contexts.find(
-    (context) => normalizeGraphqlState(context.conclusion) === "cancelled",
-  );
-  const successCount = contexts.filter((context) =>
-    ["success", "successful"].includes(normalizeGraphqlState(context.conclusion ?? context.state)),
-  ).length;
-  const neutralCount = contexts.filter(
-    (context) => normalizeGraphqlState(context.conclusion ?? context.state) === "neutral",
-  ).length;
-  const skippedCount = contexts.filter(
-    (context) => normalizeGraphqlState(context.conclusion ?? context.state) === "skipped",
-  ).length;
-  const selected = failure ?? active ?? cancelled ?? contexts[0] ?? null;
-  const rollupState = normalizeGraphqlState(rollup.state);
-
-  let state: CiState = "unknown";
-  if (failure || ["failure", "error"].includes(rollupState)) {
-    state = "failure";
-  } else if (active || ["pending", "expected"].includes(rollupState)) {
-    state =
-      normalizeGraphqlState(active?.status ?? active?.state) === "in_progress"
-        ? "running"
-        : "pending";
-  } else if (cancelled) {
-    state = "cancelled";
-  } else if (successCount > 0 || rollupState === "success") {
-    state = "success";
-  } else if (neutralCount > 0) {
-    state = "neutral";
-  } else if (skippedCount > 0) {
-    state = "skipped";
-  }
-
-  const selectedName = selected?.name ?? selected?.context ?? null;
-  return {
-    state,
-    status: selected?.status ?? selected?.state ?? rollup.state,
-    conclusion: selected?.conclusion ?? selected?.state ?? rollup.state,
-    workflow:
-      state === "success" && total > 0 ? `${successCount || total}/${total} checks` : selectedName,
-    url: selected?.detailsUrl ?? selected?.targetUrl ?? null,
-    runDate: selected?.completedAt ?? selected?.startedAt ?? selected?.createdAt ?? null,
-  };
-}
-
-async function repoSummary(
-  client: GitHubClient,
-  repo: GitHubRepo,
-  includeUnreleased: boolean,
-): Promise<Omit<Project, "freshness"> | null> {
-  const release = await latestRelease(client, repo);
-  if (!release?.tag_name) {
-    if (!includeUnreleased) {
-      return null;
-    }
-  }
-
-  let commitsSinceRelease: number | null = null;
-  let compareUrl: string | null = null;
-  const latestCommit =
-    repo.latest_commit ??
-    (await github<GitHubCommit>(
-      client,
-      `/repos/${repo.full_name}/commits/${repo.default_branch}`,
-      [404, 409],
-    ));
-  const latestRef = latestCommit?.sha ?? repo.default_branch;
-  const [compare, openPullRequests, checks] = await Promise.all([
-    release?.tag_name
-      ? github<GitHubCompare>(
-          client,
-          `/repos/${repo.full_name}/compare/${encodeURIComponent(release.tag_name)}...${encodeURIComponent(repo.default_branch)}`,
-        )
-      : Promise.resolve(null),
-    repo.open_pull_requests_total ??
-      githubCount(client, `/repos/${repo.full_name}/pulls?state=open`),
-    repo.status_check_rollup ? Promise.resolve([]) : checkRuns(client, repo, latestRef),
-  ]);
-  commitsSinceRelease = compare?.total_commits ?? null;
-  compareUrl = compare?.html_url ?? null;
-  const ci = ciDetailsFromRollup(repo.status_check_rollup) ?? ciDetails(checks);
-
-  return {
-    owner: repo.owner.login,
-    name: repo.name,
-    fullName: repo.full_name,
-    description: repo.description,
-    url: repo.html_url,
-    defaultBranch: repo.default_branch,
-    language: repo.language,
-    topics: repo.topics ?? [],
-    stars: repo.stargazers_count,
-    forks: repo.forks_count,
-    openIssues: repo.open_issues_total ?? Math.max(repo.open_issues_count - openPullRequests, 0),
-    openPullRequests,
-    issuesUrl: `${repo.html_url}/issues`,
-    pullRequestsUrl: `${repo.html_url}/pulls`,
-    archived: repo.archived,
-    pushedAt: repo.pushed_at,
-    updatedAt: repo.updated_at,
-    latestCommitSha: latestCommit?.sha?.slice(0, 7) ?? null,
-    latestCommitDate: latestCommit?.commit?.committer?.date ?? null,
-    version: release?.tag_name ?? "unreleased",
-    releaseName: release?.name ?? null,
-    releaseUrl: release?.html_url ?? repo.html_url,
-    releaseDate: release?.published_at ?? null,
-    commitsSinceRelease,
-    compareUrl,
-    ciState: ci.state,
-    ciStatus: ci.status,
-    ciConclusion: ci.conclusion,
-    ciWorkflow: ci.workflow,
-    ciUrl: ci.url,
-    ciRunDate: ci.runDate,
-  };
-}
-
-function projectCacheKey(
-  repo: GitHubRepo,
-  includeUnreleased: boolean,
-  includeReleaseData: boolean,
-): string {
-  return `repo:v1:${repo.full_name.toLowerCase()}:${includeUnreleased ? "unreleased" : "released"}:${includeReleaseData ? "release" : "metadata"}`;
-}
-
-function projectCacheSignature(repo: GitHubRepo): string {
-  return [
-    repo.default_branch,
-    repo.pushed_at ?? "",
-    repo.updated_at ?? "",
-    (repo.topics ?? []).join(","),
-    repo.latest_release?.tag_name ?? "",
-    repo.latest_release?.published_at ?? "",
-    repo.latest_commit?.sha ?? "",
-    repo.latest_commit?.commit?.committer?.date ?? "",
-    repo.status_check_rollup?.state ?? "",
-    repo.status_check_rollup?.contexts?.totalCount ?? "",
-    repo.status_check_rollup?.contexts?.nodes
-      .map((context) =>
-        [
-          context?.name ?? context?.context ?? "",
-          context?.status ?? "",
-          context?.conclusion ?? "",
-          context?.state ?? "",
-        ].join(":"),
-      )
-      .join(",") ?? "",
-  ].join("|");
-}
-
-function hydrationPriorityValue(
-  repo: GitHubRepo,
-  sort: DashboardBuildOptions["hydrateSort"],
-): number {
-  if (sort === "prs") return repo.open_pull_requests_total ?? 0;
-  if (sort === "issues") {
-    const pullRequests = repo.open_pull_requests_total ?? 0;
-    return repo.open_issues_total ?? Math.max(repo.open_issues_count - pullRequests, 0);
-  }
-  return 0;
-}
-
-function prioritizedHydrationQueue(
-  repos: GitHubRepo[],
-  options: Pick<DashboardBuildOptions, "hydrateSort" | "hydrateDirection">,
-): GitHubRepo[] {
-  if (options.hydrateSort !== "prs" && options.hydrateSort !== "issues") return repos;
-  const direction = options.hydrateDirection === "asc" ? 1 : -1;
-  return repos
-    .map((repo, index) => ({ repo, index }))
-    .sort((a, b) => {
-      const value = hydrationPriorityValue(a.repo, options.hydrateSort);
-      const other = hydrationPriorityValue(b.repo, options.hydrateSort);
-      if (value !== other) return (value - other) * direction;
-      const pushed = Date.parse(a.repo.pushed_at ?? "") || 0;
-      const otherPushed = Date.parse(b.repo.pushed_at ?? "") || 0;
-      if (pushed !== otherPushed) return otherPushed - pushed;
-      return a.index - b.index;
-    })
-    .map(({ repo }) => repo);
-}
-
-async function readProjectCache(
-  cache: ProjectCache | undefined,
-  repo: GitHubRepo,
-  includeUnreleased: boolean,
-  includeReleaseData: boolean,
-): Promise<Omit<Project, "freshness"> | null> {
-  const raw = await cache?.get(projectCacheKey(repo, includeUnreleased, includeReleaseData));
-  if (!raw) return null;
-  try {
-    const cached = JSON.parse(raw) as ProjectCacheEntry;
-    return cached.signature === projectCacheSignature(repo) ? cached.project : null;
-  } catch {
-    return null;
-  }
-}
-
-async function writeProjectCache(
-  cache: ProjectCache | undefined,
-  repo: GitHubRepo,
-  includeUnreleased: boolean,
-  includeReleaseData: boolean,
-  project: Omit<Project, "freshness">,
-): Promise<void> {
-  await cache?.put(
-    projectCacheKey(repo, includeUnreleased, includeReleaseData),
-    JSON.stringify({
-      signature: projectCacheSignature(repo),
-      project,
-    } satisfies ProjectCacheEntry),
-    { expirationTtl: repoFragmentTtlSeconds },
-  );
-}
-
-export async function resolveOwnerType(
-  login: string,
-  options: Pick<DashboardBuildOptions, "fetch" | "token"> = {},
-): Promise<Owner | null> {
-  const owner = slugOwner(login);
-  if (!validOwnerSlug(owner)) {
-    return null;
-  }
-  const client = githubClient(options.token, options.fetch);
-  const result = await github<GitHubOwner>(client, `/users/${encodeURIComponent(owner)}`);
-  if (!result?.login) {
-    return null;
-  }
-  return {
-    login: result.login,
-    type: result.type === "Organization" ? "org" : "user",
-    avatarUrl: result.avatar_url,
-    url: result.html_url ?? `https://github.com/${result.login}`,
-  };
-}
+export {
+  GitHubRateLimitError,
+  type DashboardBuildOptions,
+  type OwnerRepoCount,
+} from "./dashboard-contracts.js";
+export { fetchOwnerRepoCounts } from "./dashboard-github.js";
+export { resolveOwnerType } from "./dashboard-project-cache.js";
+export {
+  dashboardCacheKey,
+  filterRepo,
+  freshness,
+  normalizeBuildOptions,
+  slugOwner,
+  validOwnerSlug,
+  validRepoSlug,
+} from "./dashboard-projects.js";
+
+import type { DashboardPayload, Project } from "../../src/types.js";
+import type { DashboardBuildOptions, GitHubClient, GitHubRepo } from "./dashboard-contracts.js";
+import {
+  githubClient,
+  hydrateRepoDetailsOrEmpty,
+  ownerRepos,
+  ownerReposPage,
+  repoByFullName,
+  repoSummary,
+  repoWithGraphqlDetails,
+  repoWithSplitIssueCounts,
+} from "./dashboard-github.js";
+import {
+  prioritizedHydrationQueue,
+  readProjectCache,
+  writeProjectCache,
+} from "./dashboard-project-cache.js";
+import {
+  filterRepo,
+  freshness,
+  isRepoSearchProject,
+  mergeRepoMetadata,
+  repoSearchProject,
+  slugOwner,
+} from "./dashboard-projects.js";
 
 export async function buildDashboard(options: DashboardBuildOptions): Promise<DashboardPayload> {
   const includeReleaseData = options.includeReleaseData ?? true;
-  const client = githubClient(
+  const defaultClient = githubClient(
     options.token,
     options.fetch,
     options.quotaSource,
     options.quotaAccount ?? null,
   );
+  const ownerClients = new Map<string, GitHubClient>();
+  const clientForOwner = (owner: string): GitHubClient => {
+    const login = slugOwner(owner);
+    const existing = ownerClients.get(login);
+    if (existing) return existing;
+    const credential = options.ownerCredentials?.[login];
+    const client = credential
+      ? githubClient(
+          credential.token,
+          credential.fetch ?? options.fetch,
+          credential.quotaSource,
+          credential.quotaAccount,
+        )
+      : defaultClient;
+    ownerClients.set(login, client);
+    return client;
+  };
   const projects: Project[] = [...(options.initialProjects ?? [])];
-  const effectiveQuotaSource = client.quota.source;
+  const ownerPageSize = Math.max(1, Math.min(100, Math.trunc(options.ownerPageSize ?? 100)));
   let capped = false;
   let scanIncomplete = false;
   let scannedThisRun = 0;
+  let countsObservedAt: string | null = null;
+  let countsQueryPerformed = false;
+  const countedThisRun = new Set<string>();
   const seen = new Set<string>();
   const skippedRepos = new Set((options.skipRepos ?? []).map((repo) => repo.toLowerCase()));
+  const reusedCheckpointData = skippedRepos.size > 0;
   for (const project of projects) {
     seen.add(project.fullName.toLowerCase());
+  }
+
+  function beginCountQuery(): void {
+    countsQueryPerformed = true;
+    countsObservedAt ??= new Date().toISOString();
+  }
+
+  function observeCounts(repos: GitHubRepo[]): void {
+    for (const repo of repos) {
+      if (repo.open_issues_total !== undefined && repo.open_pull_requests_total !== undefined) {
+        countedThisRun.add(repo.full_name.toLowerCase());
+      }
+    }
   }
 
   function payload(state: NonNullable<DashboardPayload["cache"]>["state"]): DashboardPayload {
@@ -1269,8 +101,33 @@ export async function buildDashboard(options: DashboardBuildOptions): Promise<Da
       return bDate - aDate;
     });
     const generatedAt = new Date().toISOString();
+    const completedHydrationAt = (previous: string | null | undefined): string | null => {
+      if (options.generationStartedAt) {
+        return Date.parse(previous ?? "") > Date.parse(options.generationStartedAt)
+          ? (previous ?? null)
+          : options.generationStartedAt;
+      }
+      return reusedCheckpointData ? (previous ?? null) : generatedAt;
+    };
     const released = projects.filter((project) => project.releaseDate).length;
     const scanned = skippedRepos.size + scannedThisRun;
+    const countsAuthoritative =
+      countsQueryPerformed &&
+      sortedProjects.every(
+        (project) =>
+          countedThisRun.has(project.fullName.toLowerCase()) &&
+          project.openIssues !== null &&
+          project.openPullRequests !== null,
+      );
+    const projectCountsUpdatedAt = Object.fromEntries(
+      sortedProjects.flatMap((project) => {
+        const fullName = project.fullName.toLowerCase();
+        const updatedAt = countedThisRun.has(fullName)
+          ? countsObservedAt
+          : options.previousProjectCountsUpdatedAt?.[fullName];
+        return updatedAt ? [[fullName, updatedAt]] : [];
+      }),
+    );
     const progress = options.repoScanTarget
       ? {
           scanned,
@@ -1278,6 +135,38 @@ export async function buildDashboard(options: DashboardBuildOptions): Promise<Da
           done: state !== "partial" && !scanIncomplete,
         }
       : undefined;
+    const usedQuotas = [...new Set(ownerClients.values())].map((client) => client.quota);
+    const quota =
+      usedQuotas.length === 0
+        ? defaultClient.quota
+        : usedQuotas.every((item) => item.source === "app")
+          ? {
+              source: "app" as const,
+              account:
+                new Set(usedQuotas.map((item) => item.account).filter(Boolean)).size === 1
+                  ? (usedQuotas.find((item) => item.account)?.account ?? null)
+                  : null,
+              remaining:
+                usedQuotas
+                  .map((item) => item.remaining)
+                  .filter((value): value is number => value !== null)
+                  .sort((left, right) => left - right)[0] ?? null,
+              limit:
+                usedQuotas
+                  .map((item) => item.limit)
+                  .filter((value): value is number => value !== null)
+                  .sort((left, right) => left - right)[0] ?? null,
+              resetAt:
+                usedQuotas
+                  .map((item) => item.resetAt)
+                  .filter((value): value is string => value !== null)
+                  .sort()[0] ?? null,
+              resource:
+                new Set(usedQuotas.map((item) => item.resource).filter(Boolean)).size === 1
+                  ? (usedQuotas.find((item) => item.resource)?.resource ?? null)
+                  : null,
+            }
+          : defaultClient.quota;
     return {
       title: options.title,
       subtitle: options.subtitle,
@@ -1296,7 +185,21 @@ export async function buildDashboard(options: DashboardBuildOptions): Promise<Da
         capped,
         repoLimit: options.repoLimit ?? null,
         generatedAt,
-        quota: client.quota,
+        countsUpdatedAt: countsAuthoritative
+          ? (countsObservedAt ?? options.previousCountsUpdatedAt ?? generatedAt)
+          : (options.previousCountsUpdatedAt ?? null),
+        projectCountsUpdatedAt,
+        releasesUpdatedAt: includeReleaseData
+          ? state === "fresh"
+            ? completedHydrationAt(options.previousReleasesUpdatedAt)
+            : (options.previousReleasesUpdatedAt ?? null)
+          : null,
+        ciUpdatedAt: includeReleaseData
+          ? state === "fresh"
+            ? completedHydrationAt(options.previousCiUpdatedAt)
+            : (options.previousCiUpdatedAt ?? null)
+          : null,
+        quota,
         ...(progress ? { progress } : {}),
         ...(!includeReleaseData
           ? {
@@ -1330,7 +233,12 @@ export async function buildDashboard(options: DashboardBuildOptions): Promise<Da
     return payload("fresh");
   }
 
-  async function addRepo(repo: GitHubRepo, countLabel: string, force = false): Promise<boolean> {
+  async function addRepo(
+    repo: GitHubRepo,
+    countLabel: string,
+    force = false,
+    client = clientForOwner(repo.owner.login),
+  ): Promise<boolean> {
     const existingIndex = projects.findIndex(
       (project) => project.fullName.toLowerCase() === repo.full_name.toLowerCase(),
     );
@@ -1390,6 +298,8 @@ export async function buildDashboard(options: DashboardBuildOptions): Promise<Da
 
   if (options.repoLimit) {
     for (const owner of options.owners) {
+      const client = clientForOwner(owner.login);
+      const effectiveQuotaSource = client.quota.source;
       const ownerExisting = projects.filter(
         (project) => project.owner.toLowerCase() === owner.login.toLowerCase(),
       ).length;
@@ -1397,27 +307,94 @@ export async function buildDashboard(options: DashboardBuildOptions): Promise<Da
       let hydratedThisOwner = 0;
       let page = 1;
       const scanLimit = options.repoScanLimit ?? Number.POSITIVE_INFINITY;
-      const ownerPageLimit =
+      const configuredOwnerPageLimit =
+        options.ownerPageLimit === undefined
+          ? Number.POSITIVE_INFINITY
+          : Math.max(1, Math.trunc(options.ownerPageLimit));
+      const quotaOwnerPageLimit =
         effectiveQuotaSource === "shared" && includeReleaseData ? 3 : Number.POSITIVE_INFINITY;
+      const ownerPageLimit = Math.min(configuredOwnerPageLimit, quotaOwnerPageLimit);
       if (includeReleaseData && options.includeUnreleased) {
         const hydrateQueue: GitHubRepo[] = [];
+        const hydrationQueued = new Set<string>();
+        const liveOwnerRepos = new Set<string>();
+        const observedOwnerRepos = new Set<string>();
+        const removedRepos: string[] = [];
+        const absentRepos: string[] = [];
+        const observedArchivedProjects = new Map<string, Project>();
+        const explicitRepos = new Set(
+          (options.includeRepos ?? []).map((repo) => repo.toLowerCase()),
+        );
+        const pageSignatures = new Set<string>();
         let metadataChanged = false;
+        let liveOwnerVisible = 0;
+        let enumerationComplete = false;
         const hasScanLimit = Number.isFinite(scanLimit);
+        const collectPriorityCandidates =
+          options.hydrateSort === "issues" || options.hydrateSort === "prs";
         while (
           ownerVisible < options.repoLimit ||
-          (hasScanLimit && hydrateQueue.length < scanLimit)
+          (hasScanLimit && hydrateQueue.length < scanLimit) ||
+          collectPriorityCandidates
         ) {
-          const repos = await ownerRepos(client, owner, includeReleaseData, page);
-          if (repos.length === 0) {
+          beginCountQuery();
+          const ownerPage = await ownerReposPage(
+            client,
+            owner,
+            includeReleaseData,
+            page,
+            ownerPageSize,
+          );
+          const repos = ownerPage.repos;
+          observeCounts(repos);
+          const pageSignature =
+            repos.length > 0
+              ? repos.map((repo) => repo.full_name.toLowerCase()).join("\n")
+              : ownerPage.cursor !== undefined
+                ? `empty:graphql:${ownerPage.cursor ?? "root"}`
+                : `empty:rest:${page}`;
+          if (pageSignatures.has(pageSignature)) {
+            capped = true;
+            if (
+              options.repoScanTarget &&
+              skippedRepos.size + scannedThisRun + hydrateQueue.length < options.repoScanTarget
+            ) {
+              scanIncomplete = true;
+            }
             break;
           }
+          pageSignatures.add(pageSignature);
+          if (repos.length === 0) {
+            if (!ownerPage.hasNextPage) {
+              enumerationComplete = true;
+              break;
+            }
+            if (page >= ownerPageLimit) {
+              capped = true;
+              break;
+            }
+            page += 1;
+            continue;
+          }
           let exhaustedPage = false;
-          let visibleAddedThisPage = 0;
           for (const [index, repo] of repos.entries()) {
             const fullName = repo.full_name.toLowerCase();
+            if (!repo.private) {
+              observedOwnerRepos.add(fullName);
+              if (repo.archived) {
+                observedArchivedProjects.set(fullName, repoSearchProject(repo));
+              }
+            }
             if (!filterRepo(repo, options)) {
               continue;
             }
+            if (liveOwnerVisible >= options.repoLimit) {
+              capped = true;
+              exhaustedPage = true;
+              break;
+            }
+            liveOwnerVisible += 1;
+            liveOwnerRepos.add(fullName);
             const existingIndex = projects.findIndex(
               (project) => project.fullName.toLowerCase() === fullName,
             );
@@ -1430,26 +407,41 @@ export async function buildDashboard(options: DashboardBuildOptions): Promise<Da
               projects.push(repoSearchProject(repo));
               seen.add(fullName);
               ownerVisible += 1;
-              visibleAddedThisPage += 1;
               metadataChanged = true;
               visibleForHydration = true;
               if (
                 ownerVisible >= options.repoLimit &&
-                (index < repos.length - 1 || repos.length === 100)
+                (index < repos.length - 1 || repos.length === ownerPageSize)
               ) {
                 capped = true;
               }
             } else {
-              capped = true;
-              if (ownerVisible >= options.repoLimit) {
-                exhaustedPage = true;
-              }
-            }
-            if (visibleForHydration && !skippedRepos.has(fullName)) {
-              hydrateQueue.push(repo);
-            }
-            if (ownerVisible >= options.repoLimit) {
-              if (index < repos.length - 1 || repos.length === 100) {
+              const replaceIndex = projects.reduce((oldestIndex, project, projectIndex) => {
+                if (
+                  project.owner.toLowerCase() !== owner.login.toLowerCase() ||
+                  explicitRepos.has(project.fullName.toLowerCase()) ||
+                  liveOwnerRepos.has(project.fullName.toLowerCase())
+                ) {
+                  return oldestIndex;
+                }
+                if (oldestIndex < 0) return projectIndex;
+                const oldest = projects[oldestIndex]!;
+                const projectDate = Date.parse(project.pushedAt ?? project.updatedAt ?? "") || 0;
+                const oldestDate = Date.parse(oldest.pushedAt ?? oldest.updatedAt ?? "") || 0;
+                return projectDate <= oldestDate ? projectIndex : oldestIndex;
+              }, -1);
+              if (replaceIndex >= 0) {
+                const [removed] = projects.splice(replaceIndex, 1);
+                const removedFullName = removed!.fullName.toLowerCase();
+                seen.delete(removedFullName);
+                skippedRepos.delete(removedFullName);
+                removedRepos.push(removedFullName);
+                projects.push(repoSearchProject(repo));
+                seen.add(fullName);
+                metadataChanged = true;
+                visibleForHydration = true;
+                capped = true;
+              } else {
                 capped = true;
                 if (
                   options.repoScanTarget &&
@@ -1457,27 +449,57 @@ export async function buildDashboard(options: DashboardBuildOptions): Promise<Da
                 ) {
                   scanIncomplete = true;
                 }
+                exhaustedPage = true;
               }
-              exhaustedPage = true;
-              break;
+            }
+            if (
+              visibleForHydration &&
+              !skippedRepos.has(fullName) &&
+              !hydrationQueued.has(fullName)
+            ) {
+              hydrateQueue.push(repo);
+              hydrationQueued.add(fullName);
             }
             if (exhaustedPage) {
               break;
             }
           }
-          if (repos.length < 100 || exhaustedPage) {
+          if (!ownerPage.hasNextPage) {
+            enumerationComplete = !exhaustedPage;
+            break;
+          }
+          if (exhaustedPage) {
             break;
           }
           if (page >= ownerPageLimit) {
             capped = true;
             break;
           }
-          if (hasScanLimit && hydrateQueue.length >= scanLimit && visibleAddedThisPage === 0) {
-            break;
-          }
           page += 1;
         }
-        if (metadataChanged) {
+        if (enumerationComplete) {
+          for (let index = projects.length - 1; index >= 0; index -= 1) {
+            const project = projects[index]!;
+            const fullName = project.fullName.toLowerCase();
+            if (
+              project.owner.toLowerCase() !== owner.login.toLowerCase() ||
+              explicitRepos.has(fullName) ||
+              liveOwnerRepos.has(fullName)
+            ) {
+              continue;
+            }
+            projects.splice(index, 1);
+            seen.delete(fullName);
+            skippedRepos.delete(fullName);
+            removedRepos.push(fullName);
+            if (!observedOwnerRepos.has(fullName)) {
+              absentRepos.push(fullName);
+            }
+            ownerVisible -= 1;
+            metadataChanged = true;
+          }
+        }
+        if (metadataChanged || observedArchivedProjects.size > 0) {
           const progressPayload = payload("partial");
           if (progressPayload.cache?.progress) {
             progressPayload.cache.progress.done = false;
@@ -1487,12 +509,17 @@ export async function buildDashboard(options: DashboardBuildOptions): Promise<Da
             scanned: skippedRepos.size + scannedThisRun,
             done: false,
             phase: "metadata",
+            removedRepos,
+            absentRepos,
+            observedProjects: [...observedArchivedProjects.values()],
           });
         }
         const prioritized = prioritizedHydrationQueue(hydrateQueue, options);
         const hydrationBatch = hasScanLimit ? prioritized.slice(0, scanLimit) : prioritized;
         if (hydrationBatch.length < prioritized.length) {
-          capped = true;
+          if (scanLimit > 0) {
+            capped = true;
+          }
           if (
             options.repoScanTarget &&
             skippedRepos.size + scannedThisRun + hydrationBatch.length < options.repoScanTarget
@@ -1501,27 +528,63 @@ export async function buildDashboard(options: DashboardBuildOptions): Promise<Da
           }
         }
         const graphqlDetails = await hydrateRepoDetailsOrEmpty(client, hydrationBatch);
-        for (const repo of hydrationBatch) {
-          const hydratedRepo = repoWithGraphqlDetails(repo, graphqlDetails);
-          hydratedThisOwner += 1;
-          scannedThisRun += 1;
-          await addRepo(hydratedRepo, `${owner.login} ${ownerVisible}/${options.repoLimit}`);
-          const progressPayload = payload("partial");
-          if (progressPayload.cache?.progress) {
-            progressPayload.cache.progress.done = false;
+        for (let index = 0; index < hydrationBatch.length; index += 4) {
+          const hydratedRepos = hydrationBatch
+            .slice(index, index + 4)
+            .map((repo) => repoWithGraphqlDetails(repo, graphqlDetails));
+          await Promise.all(
+            hydratedRepos.map((repo) =>
+              addRepo(repo, `${owner.login} ${ownerVisible}/${options.repoLimit}`),
+            ),
+          );
+          for (const hydratedRepo of hydratedRepos) {
+            hydratedThisOwner += 1;
+            scannedThisRun += 1;
+            const progressPayload = payload("partial");
+            if (progressPayload.cache?.progress) {
+              progressPayload.cache.progress.done = false;
+            }
+            await options.onProgress?.(progressPayload, {
+              scannedRepo: hydratedRepo.full_name,
+              scanned: skippedRepos.size + scannedThisRun,
+              done: false,
+              phase: "hydrate",
+            });
           }
-          await options.onProgress?.(progressPayload, {
-            scannedRepo: hydratedRepo.full_name,
-            scanned: skippedRepos.size + scannedThisRun,
-            done: false,
-            phase: "hydrate",
-          });
         }
         continue;
       }
+      const pageSignatures = new Set<string>();
       while (ownerVisible < options.repoLimit || hydratedThisOwner < scanLimit) {
-        const repos = await ownerRepos(client, owner, includeReleaseData, page);
+        beginCountQuery();
+        const ownerPage = await ownerReposPage(
+          client,
+          owner,
+          includeReleaseData,
+          page,
+          ownerPageSize,
+        );
+        const repos = ownerPage.repos;
+        observeCounts(repos);
+        const pageSignature =
+          repos.length > 0
+            ? repos.map((repo) => repo.full_name.toLowerCase()).join("\n")
+            : ownerPage.cursor !== undefined
+              ? `empty:graphql:${ownerPage.cursor ?? "root"}`
+              : `empty:rest:${page}`;
+        if (pageSignatures.has(pageSignature)) {
+          capped = true;
+          break;
+        }
+        pageSignatures.add(pageSignature);
         if (repos.length === 0) {
+          if (ownerPage.hasNextPage && page < ownerPageLimit) {
+            page += 1;
+            continue;
+          }
+          if (ownerPage.hasNextPage) {
+            capped = true;
+          }
           break;
         }
         const detailLimit = Number.isFinite(scanLimit)
@@ -1560,12 +623,20 @@ export async function buildDashboard(options: DashboardBuildOptions): Promise<Da
             ownerVisible += 1;
             visibleAddedThisPage += 1;
             seededVisibleRow = true;
+            if (
+              ownerVisible >= options.repoLimit &&
+              (index < repos.length - 1 || ownerPage.hasNextPage)
+            ) {
+              capped = true;
+            }
           }
           if (skippedRepos.has(fullName)) {
             continue;
           }
           if (hydratedThisOwner >= scanLimit) {
-            capped = true;
+            if (scanLimit > 0) {
+              capped = true;
+            }
             if (options.repoScanTarget) {
               scanIncomplete = true;
             }
@@ -1585,7 +656,7 @@ export async function buildDashboard(options: DashboardBuildOptions): Promise<Da
             ownerVisible += 1;
             visibleAddedThisPage += 1;
             if (ownerVisible >= options.repoLimit) {
-              if (index < repos.length - 1 || repos.length === 100) {
+              if (index < repos.length - 1 || repos.length === ownerPageSize) {
                 capped = true;
               }
               exhaustedPage = true;
@@ -1605,7 +676,7 @@ export async function buildDashboard(options: DashboardBuildOptions): Promise<Da
             break;
           }
         }
-        if (repos.length < 100) {
+        if (!ownerPage.hasNextPage) {
           break;
         }
         if (exhaustedPage) {
@@ -1624,7 +695,11 @@ export async function buildDashboard(options: DashboardBuildOptions): Promise<Da
   } else {
     const repos: GitHubRepo[] = [];
     for (const owner of options.owners) {
-      repos.push(...(await ownerRepos(client, owner, includeReleaseData)));
+      const client = clientForOwner(owner.login);
+      beginCountQuery();
+      const ownerResult = await ownerRepos(client, owner, includeReleaseData);
+      observeCounts(ownerResult);
+      repos.push(...ownerResult);
     }
 
     const uniqueRepos = [
@@ -1634,13 +709,24 @@ export async function buildDashboard(options: DashboardBuildOptions): Promise<Da
     ];
 
     for (const [index, repo] of uniqueRepos.entries()) {
-      await addRepo(repo, `${index + 1}/${uniqueRepos.length}`);
+      await addRepo(
+        repo,
+        `${index + 1}/${uniqueRepos.length}`,
+        false,
+        clientForOwner(repo.owner.login),
+      );
     }
   }
 
   for (const fullName of options.includeRepos ?? []) {
-    const repo = await repoByFullName(client, fullName);
+    const client = clientForOwner(fullName.split("/")[0] ?? "");
+    beginCountQuery();
+    let repo = await repoByFullName(client, fullName);
+    if (repo && !includeReleaseData && options.includeUnreleased) {
+      repo = await repoWithSplitIssueCounts(client, repo);
+    }
     if (repo) {
+      observeCounts([repo]);
       await addRepo(repo, `custom`, true);
     }
   }

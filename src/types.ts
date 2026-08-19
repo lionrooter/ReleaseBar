@@ -39,11 +39,12 @@ export type Project = {
   topics: string[];
   stars: number;
   forks: number;
-  openIssues: number;
-  openPullRequests: number;
+  openIssues: number | null;
+  openPullRequests: number | null;
   issuesUrl: string;
   pullRequestsUrl: string;
   archived: boolean;
+  fork?: boolean;
   pushedAt: string | null;
   updatedAt: string | null;
   latestCommitSha: string | null;
@@ -98,8 +99,10 @@ export type AuthFunnelEvent = {
 
 export type AuthFunnelSummary = {
   generatedAt: string;
+  installationCount: number;
   installations: AuthInstallationRecord[];
   events: AuthFunnelEvent[];
+  counterCount: number;
   counts: Array<{ key: string; count: number }>;
 };
 
@@ -154,6 +157,10 @@ export type DashboardPayload = {
     capped: boolean;
     repoLimit: number | null;
     generatedAt: string;
+    countsUpdatedAt?: string | null;
+    projectCountsUpdatedAt?: Record<string, string>;
+    releasesUpdatedAt?: string | null;
+    ciUpdatedAt?: string | null;
     quota?: ApiQuota;
     message?: string;
     progress?: {
@@ -198,7 +205,16 @@ export type OwnerActivityRepository = {
   url: string;
   events: number;
   commits: number;
+  pullRequests: number;
+  issues: number;
+  comments: number;
+  releases: number;
   lastActiveAt: string;
+};
+
+export type OwnerActivityRepositorySummary = {
+  fullName: string;
+  text: string;
 };
 
 export type OwnerActivitySummary = {
@@ -210,6 +226,7 @@ export type OwnerActivitySummary = {
   eventsUsed: number;
   promptVersion?: number;
   message?: string;
+  repositories?: OwnerActivityRepositorySummary[];
 };
 
 export type OwnerActivityPayload = {
@@ -512,9 +529,11 @@ export type RepoDetailPayload = {
 export type RefreshTarget = {
   key: string;
   kind: "dashboard";
+  indexVersion?: number;
   owner: string;
   owners: string[];
   repos: string[];
+  profileSnapshotKey?: string | null;
   includeReleaseData: boolean;
   path: string;
   priority: number;
@@ -523,12 +542,15 @@ export type RefreshTarget = {
   lastSuccessAt: string | null;
   nextDueAt: string;
   failureCount: number;
+  terminalBackoffUntil?: string | null;
   message?: string;
 };
 
 export type RefreshJob = {
   id: string;
   targetKey: string;
+  target?: RefreshTarget;
+  targetSnapshotKey?: string;
   kind: "dashboard";
   status: "queued" | "running" | "succeeded" | "failed" | "skipped";
   reason: string;
@@ -566,6 +588,7 @@ export type SchedulerAdminPayload = {
   authorized: boolean;
   status: {
     targets: number;
+    scannedTargets: number;
     dueTargets: number;
     queuedJobs: number;
     runningJobs: number;
@@ -577,8 +600,6 @@ export type SchedulerAdminPayload = {
   targets: RefreshTarget[];
   jobs: RefreshJob[];
   events: SchedulerAuditEvent[];
-  githubAccess: GitHubAccessSummary;
-  auth: AuthFunnelSummary;
 };
 
 export type GitHubAccessRouteSummary = {

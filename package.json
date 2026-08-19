@@ -1,6 +1,6 @@
 {
   "name": "releasebar",
-  "version": "0.1.0",
+  "version": "0.2.3",
   "private": true,
   "description": "Release freshness dashboard for open source maintainers.",
   "type": "module",
@@ -11,7 +11,8 @@
     "build:script": "tsc -p tsconfig.build.json",
     "check": "npm run check:static && npm run check:data",
     "check:data": "node node_modules/.cache/releasebar-build/scripts/build.js --check",
-    "check:static": "npm run typecheck && npm run lint && npm run format:check && npm run build:script && npm run build:app && npm run build:assets && npm run test",
+    "check:static": "npm run check:size && npm run typecheck && npm run lint && npm run format:check && npm run build:script && npm run build:app && npm run build:assets && npm run test",
+    "check:size": "node scripts/check-file-size.mjs",
     "dev": "vite dev --host 127.0.0.1",
     "dev:worker": "npm exec --yes --package wrangler -- wrangler dev --port 8787",
     "dev:worker:real": "npm exec --yes --package wrangler -- wrangler dev --remote --port 8787",
@@ -22,23 +23,24 @@
     "typecheck": "tsc --noEmit && svelte-check --tsconfig ./tsconfig.svelte.json"
   },
   "dependencies": {
-    "@fontsource/jetbrains-mono": "^5.2.8",
+    "@fontsource/jetbrains-mono": "^5.3.0",
     "@resvg/resvg-wasm": "^2.6.2",
     "bits-ui": "^2.18.1",
-    "svelte": "^5.55.9",
+    "svelte": "^5.56.8",
     "svelte-command-palette": "^2.0.2",
-    "valibot": "^1.4.0"
+    "valibot": "^1.4.2"
   },
   "devDependencies": {
-    "@sveltejs/vite-plugin-svelte": "^7.1.2",
-    "@types/node": "^25.9.1",
-    "oxfmt": "^0.51.0",
-    "oxlint": "^1.66.0",
-    "svelte-check": "^4.4.8",
-    "typescript": "^6.0.3",
-    "vite": "^8.0.14"
+    "@sveltejs/vite-plugin-svelte": "^7.2.0",
+    "@types/node": "^26.2.0",
+    "@typescript/native": "npm:typescript@^7.0.2",
+    "oxfmt": "^0.62.0",
+    "oxlint": "^1.78.0",
+    "svelte-check": "^4.7.5",
+    "typescript": "npm:@typescript/typescript6@^6.0.2",
+    "vite": "^8.2.1"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=22.12.0"
   }
 }

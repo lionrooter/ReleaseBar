@@ -1,7 +1,52 @@
 # Changelog
 
-## Unreleased
+## 0.2.4 - Unreleased
 
+- Reworked the README into a concise product and quick-start guide, with detailed behavior and self-hosting operations moved into focused docs.
+
+## 0.2.3 - 2026-08-01
+
+- Refreshed the dashboard design: the UI now ships JetBrains Mono (previously only used for social cards), uppercase micro-labels gained consistent letterspaced styling, dashboard rows show a freshness-colored edge bar and a freshness-tinted state tag, missing commit counts render quietly instead of as large red `n/a`, active filters/periods glow green, big numerals got heavier weights with a subtle phosphor glow, dark mode gained faint CRT scanlines, and the light theme received matching contrast and polish.
+- Updated the frontend compiler, build tools, static-analysis tools, type definitions, and CI Node setup to their latest stable releases.
+- Refreshed the Cloudflare Workers compatibility date after verifying the newly enabled TLS option validation does not affect ReleaseBar.
+
+## 0.2.2 - 2026-07-04
+
+- Kept GitHub logins alive by storing and rotating GitHub App refresh tokens, so expiring eight-hour user access tokens renew automatically instead of silently degrading until the next login.
+- Stopped `/api/me` from rewriting the stored session and installation caches on every request and made those cache writes best-effort, so concurrent tabs (for example after a browser restart) no longer trip Workers KV write limits and render a logged-in user as logged out.
+
+## 0.2.1 - 2026-06-19
+
+- Made anonymous GitHub actions log in first, then detect existing App installations before offering installation for uncovered dashboards.
+- Split the Worker, frontend, dashboard library, styles, and tests into bounded domain modules and added a CI guard that keeps maintained files below 1,000 lines.
+- Served stale Hot dashboards immediately while a durable background refresh rebuilds them with bounded concurrent cache reads, and replaced deletion-prone webhook invalidation with timestamp markers to remove periodic multi-second stalls.
+- Warmed missing, stale, or incomplete public owner caches immediately after GitHub login or App installation so source-owned installation quota can benefit later anonymous viewers.
+- Prominently offers GitHub App installation whenever dashboard, repository, activity, trust, or audience requests hit GitHub rate limits, including for already signed-in users and cached quota failures.
+- Widened the logged-out GitHub App action so its full label remains visible on desktop while preserving the compact mobile label.
+- Reduced shared GitHub quota pressure by partitioning mixed-owner dashboards across per-account GitHub App tokens, bundling App-backed repository core data into GraphQL, revalidating stale REST caches with ETags, coalescing concurrent detail builds, extending webhook-invalidated caches, and deferring nonessential enrichment before the shared bucket becomes critical.
+- Updated CI and local tooling to Node.js 24 LTS and refreshed the Worker compatibility date.
+- Hid contributor-fork activity when the upstream repository belongs to the activity profile, while preserving unrelated external project work.
+- Kept scheduler and admin scans within Workers KV operation limits by rotating bounded current-schema target pages, and reduced authenticated repository work-trend requests from four REST searches to one GraphQL query.
+- Kept the admin console responsive by loading scheduler, quota, and installation summaries independently and bounding installation and auth-counter samples while preserving their totals.
+
+## 0.2.0 - 2026-06-13
+
+- Condensed owner dashboard activity totals, ranked repositories, metadata, and drill-down navigation into a responsive two-row digest.
+- Collapsed repository event logs by default on owner activity pages so the ranked summaries stay compact until expanded.
+- Expanded high-signal repository activity summaries to one or two short sentences while compacting the single batched AI request and using a repository-aware output ceiling with a reasoning-model compatibility floor.
+- Added `/owner/activity` drill-down pages and a documented `GET /api/:owner/activity` OpenAPI endpoint with day, week, and month views, repository ranking by actual activity volume, grouped event logs, overall AI summaries, and bounded per-repository AI summaries while preserving repositories named `activity` under escaped detail routes.
+- Added shared per-owner metadata snapshots with lean 15-minute issue/PR count refreshes, fresh-cache responses before GitHub App token discovery, four-repository release hydration concurrency, independent count/release/CI timestamps, signed GitHub webhooks for issue, pull request, push, release, and archive updates, and stricter archived-repository removal from status views.
+- Prioritized webhook-triggered push and release refreshes by recent dashboard activity and skipped eager deep hydration for variants not viewed in the last day, reducing stale archived and fork variant queue and GitHub quota pressure.
+- Coalesced per-owner webhook bursts so issue and pull request events for the same repository share one authoritative count refresh, push and release bursts share one release refresh, follower deliveries stop contending behind active processing, and terminal fanout deliveries are acknowledged after durable deduplication cleanup.
+- Returned current issue and PR counts before deep release scans when authenticated GitHub quota provides an exact split, marked anonymous REST splits unavailable without per-repository fan-out, moved progressive dashboard hydration to deadline-bounded Queue consumers with Durable Object checkpoints and strongly consistent target backoff state, removed stale cross-request build promises that could freeze scan progress, reduced oversized owner release GraphQL pages without changing prerelease selection, moved audit writes off foreground responses, scoped short upstream backoffs by GraphQL operation, and parallelized admin access-log reads.
+- Updated Svelte, Node.js type definitions, Oxfmt, and Oxlint to their latest compatible patch releases.
+
+## 0.1.0 - 2026-06-11
+
+- Bound GitHub OAuth callbacks to the initiating browser and capped return targets to prevent session-swapping attacks and oversized authorization requests.
+- Kept asynchronously loaded GitHub connection state reactive so configured deployments show the install or connect action instead of a stale unavailable label.
+- Kept dashboards from getting stuck on empty repositories by skipping check-run hydration when GitHub has no commit to check, and stopped passing the Actions `GITHUB_TOKEN` into deploy builds that do not need it.
+- Stopped classifying human audience logins that merely end in `bot` as automation when GitHub account metadata does not identify them as bots. Thanks @devYRPauli.
 - Clarified trust score tooltips for owner, organization, contributor, and stargazer signals. Thanks @vincent-peng.
 - Made dashboard search match separate terms across repository metadata and release names. Thanks @tanish19078.
 - Kept light-mode trust panels on theme-aware surfaces instead of dark translucent backgrounds. Thanks @shubh73.
@@ -11,6 +56,9 @@
 - Routed public GitHub connection actions through GitHub App installation instead of OAuth sign-in, while still remembering installed app quota for anonymous dashboards.
 - Kept the mobile status/action bar within the viewport in narrow embedded browsers by using fixed control columns and a shorter GitHub connect label.
 - Reduced repository detail GitHub API usage by caching contributors, languages, releases, live status probes, stats, and issue/PR search counts across rebuilds, with short backoff for warming stats endpoints.
+- Reduced crawler and scheduler GitHub quota waste with cache-only bot misses, repo-wide stats warmup backoff, longer issue/PR count caches, and dormant shared-target throttling.
+- Deferred queued scheduler jobs during GitHub GraphQL backoff instead of recording avoidable failures.
+- Hardened scheduler dashboard rebuilds against empty successful GitHub API responses.
 - Added GitHub token-use monitoring to the admin console and reduced shared-token pressure with quota pause guards, GraphQL backoff, smaller discovery release batches, and capped shared owner scans.
 - Improved mobile dashboards with fixed viewport scaling, a single-row status/theme/login header, denser repository cards, and softer light-mode row colors.
 - Pointed social preview metadata at PNG cards and lengthened preview titles for better crawler compatibility.
