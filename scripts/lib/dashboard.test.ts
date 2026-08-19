@@ -1,3 +1,4 @@
+import "./dashboard-tests/fork-deploy-guard.test.js";
 import "./dashboard-tests/browser-audit.test.js";
 import "./dashboard-tests/routing-view.test.js";
 import "./dashboard-tests/hot-dashboard-shell.test.js";

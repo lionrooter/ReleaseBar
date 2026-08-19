@@ -13,8 +13,20 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  skip-fork:
+    name: Skip monitor on fork
+    if: github.repository != 'steipete/ReleaseBar'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Refuse release.bar smoke
+        run: |
+          set -euo pipefail
+          echo "Monitor is disabled on ${GITHUB_REPOSITORY}."
+          echo "This fork must not smoke https://release.bar."
+
   smoke:
     name: Production smoke
+    if: github.repository == 'steipete/ReleaseBar'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
