@@ -8,14 +8,10 @@ Work style: terse.
 
 ## Deploy
 
-- Canonical prod: Cloudflare Worker + Worker Assets from `wrangler.toml`.
-- Repo/product name: ReleaseBar. Config file: `releasebar.config.json`.
-- Cloudflare Worker service name is still `releasedeck-api`; do not rename it casually because it affects deployed infrastructure.
-- `release.bar` is not GitHub Pages. Do not trust Pages deploys for prod.
-- Push to `main` runs `.github/workflows/deploy.yml`, then `npm exec --yes --package wrangler -- wrangler deploy`.
-- Required GitHub secret: `CLOUDFLARE_API_TOKEN`.
-- Cloudflare accounts: ReleaseBar prod uses `steipete@gmail.com` account `de09342a728de2c25c85cc6b34d68739`; OpenClaw stuff uses OpenClaw account `91b59577e757131d68d55a471fe32aca`. Ask if unsure.
-- Post-deploy smoke compares live JS/CSS hashes against local `dist/index.html`, then checks `/`, `/steipete`, `/openclaw/openclaw`, and `/api/_discover`.
-- Local prod deploy: `npx wrangler deploy`.
+- This fork is not steipete prod. Worker service is `lionroot-releasebar` on the OpenClaw Cloudflare account (`wrangler.toml`). Do not retarget to `releasedeck-api` or enable `release.bar` deploys.
+- Deploy and Monitor jobs in `.github/workflows/` are gated to `steipete/ReleaseBar` only. Push to `main` on this fork must not wrangler-deploy or smoke https://release.bar.
+- Do not add `CLOUDFLARE_API_TOKEN` to this repository to "enable" the inherited deploy workflow.
+- Optional local Wrangler: see `docs/lionroot-deploy.md`.
+- Repo/product name: ReleaseBar. Config file: `releasebar.config.json` (keep Lionroot owners/domain).
 - Local real-data dev: `npm run dev:worker:real` uses Wrangler `--remote` on port 8787 with real secrets and preview KV.
 - Static CI/proof: `npm run check:static`.
